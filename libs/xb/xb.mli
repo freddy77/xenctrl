@@ -22,7 +22,9 @@ module Op :
       | Isintroduced
       | Resume
       | Set_target
+      | Deprecated_Restrict
       | Reset_watches
+      | Directory_part
       | Invalid
     val operation_c_mapping : operation array
     val size : int
