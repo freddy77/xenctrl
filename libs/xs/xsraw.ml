@@ -186,7 +186,7 @@ let debug command con =
 let directory tid path con =
 	validate_path path;
 	let data = sync (Queueop.directory tid path) con in
-	split_string '\000' data
+	String.split_on_char '\000' data
 
 let read tid path con =
 	validate_path path;
