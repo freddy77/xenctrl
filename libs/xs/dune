@@ -1,4 +1,4 @@
 (library
  (name xenstore)
  (public_name xenctrl.xenstore)
- (libraries unix xenbus))
+ (libraries unix xenbus str))

@@ -84,14 +84,17 @@ let perms_of_string s =
 	match l with h :: l -> (fst h, snd h, l) | [] -> (0, PERM_NONE, [])
 
 (* send one packet - can sleep *)
-let pkt_send con =
-	if Xb.has_old_output con.xb then
-		raise Partial_not_empty;
+let pkt_send_nocheck con =
 	let workdone = ref false in
 	while not !workdone
 	do
 		workdone := Xb.output con.xb
 	done
+
+let pkt_send con =
+	if Xb.has_old_output con.xb then
+		raise Partial_not_empty;
+	pkt_send_nocheck con
 
 (* receive one packet - can sleep *)
 let pkt_recv con =
@@ -115,6 +118,10 @@ let pkt_recv_timeout con timeout =
 			false, None
 	)
 
+let split_first s c =
+	let i = String.index s c in
+	(Str.string_before s i, Str.string_after s (i + 1))
+
 let queue_watchevent con data =
 	let ls = split_string ~limit:2 '\000' data in
 	if List.length ls != 2 then
@@ -135,7 +142,7 @@ let read_watchevent con =
 	| ty               -> unexpected_packet Xb.Op.Watchevent ty
 
 (* send one packet in the queue, and wait for reply *)
-let rec sync_recv ty con =
+let rec sync_recv_pkt ty con =
 	let pkt = pkt_recv con in
 	match Xb.Packet.get_ty pkt with
 	| Xb.Op.Error       -> (
@@ -146,18 +153,57 @@ let rec sync_recv ty con =
 		| s        -> raise (Xb.Packet.Error s))
 	| Xb.Op.Watchevent  ->
 		queue_watchevent con (Xb.Packet.get_data pkt);
-		sync_recv ty con
-	| rty when rty = ty -> Xb.Packet.get_data pkt
+		sync_recv_pkt ty con
+	| rty when rty = ty -> pkt
 	| rty               -> unexpected_packet ty rty
+
+let sync_recv ty con =
+	Xb.Packet.get_data (sync_recv_pkt ty con)
+
+let send_directory_part (directory_pkt:Packet.t) offset con =
+	let data = directory_pkt.data ^ string_of_int(offset) ^ "\000" in
+	let request_pkt = {directory_pkt with ty= Xb.Op.Directory_part; data= data} in
+	let partial_out = Packet.to_string request_pkt in
+	con.xb.partial_out <- partial_out ;
+	pkt_send_nocheck con
+
+let rec sync_recv_directory_part (directory_pkt:Packet.t) data generation con =
+	let offset = String.length data in
+	send_directory_part directory_pkt offset con ;
+	let pkt = sync_recv_pkt Xb.Op.Directory_part con in
+	let pkt_generation, pkt_data =
+		try
+			split_first pkt.data '\000'
+		with Not_found ->
+			raise (Xb.Packet.DataError "generation field not found")
+	in
+	if data <> String.empty && generation <> pkt_generation then (
+		(* got different generation, restart *)
+		(sync_recv_directory_part[@tailcall]) directory_pkt String.empty String.empty con
+	) else (
+		let data = data ^ pkt_data in
+		let len = String.length data in
+		if len < 2 then
+			String.empty
+		else if String.ends_with ~suffix:"\000\000" data then
+			String.sub data 0 (len - 2)
+		else
+			(sync_recv_directory_part[@tailcall]) directory_pkt data pkt_generation con
+	)
 
 let sync f con =
 	(* queue a query using function f *)
 	f con.xb;
 	if Xb.output_len con.xb = 0 then
 		Printf.printf "output len = 0\n%!";
-	let ty = Xb.Packet.get_ty (Xb.peek_output con.xb) in
+	let request_pkt = Xb.peek_output con.xb in
+	let ty = Xb.Packet.get_ty request_pkt in
 	pkt_send con;
-	sync_recv ty con
+	try
+		sync_recv ty con
+	(* Automatically change Directory request to Directory_part if E2BIG error *)
+	with Xb.Packet.Error s when s = "E2BIG" && ty = Xb.Op.Directory ->
+		sync_recv_directory_part request_pkt String.empty String.empty con
 
 let ack s =
 	if s = "OK" then () else raise (Xb.Packet.DataError s)
