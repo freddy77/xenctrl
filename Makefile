@@ -21,3 +21,5 @@ clean:
 format::
 	dune build @fmt --auto-promote
 
+test::
+	dune runtest
