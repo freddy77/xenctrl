@@ -18,3 +18,6 @@ install: all
 clean:
 	dune clean
 
+format::
+	dune build @fmt --auto-promote
+

@@ -5,10 +5,5 @@
  (name xenctrl)
  (public_name xenctrl)
  (libraries unix xenmmap)
- (c_library_flags
-  -lxenctrl
-  -lxenguest
-  -lxencall
-  -lxenforeignmemory
-  -lxengnttab
-  -lxentoollog))
+ (c_library_flags -lxenctrl -lxenguest -lxencall -lxenforeignmemory
+   -lxengnttab -lxentoollog))
