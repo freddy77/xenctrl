@@ -165,13 +165,12 @@ let ack s =
 (** Check paths are suitable for read/write/mkdir/rm/directory etc (NOT watches) *)
 let validate_path path =
 	(* Paths shouldn't have a "//" in the middle *)
-	let bad = "//" in
-	for offset = 0 to String.length path - (String.length bad) do
-		if String.sub path offset (String.length bad) = bad then
+	for offset = 0 to String.length path - 2 do
+		if path.[offset] = '/' && path.[offset + 1] = '/' then
 			raise (Invalid_path path)
 	done;
 	(* Paths shouldn't have a "/" at the end, except for the root *)
-	if path <> "/" && path <> "" && path.[String.length path - 1] = '/' then
+	if path <> "/" && path <> "" && String.ends_with ~suffix:"/" path then
 		raise (Invalid_path path)
 
 (** Check to see if a path is suitable for watches *)
